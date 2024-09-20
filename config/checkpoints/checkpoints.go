@@ -17,8 +17,6 @@ import (
 // / The location where the list of checkpoint services are stored.
 const CHECKPOINT_SYNC_SERVICES_LIST = "https://raw.githubusercontent.com/ethpandaops/checkpoint-sync-health-checks/master/_data/endpoints.yaml"
 
-type byte256 [32]byte
-
 type StartEndTime struct {
 	/// An ISO 8601 formatted UTC timestamp.
 	Start_time string
@@ -66,8 +64,8 @@ type RawSlotResponseData struct {
 }
 type Slot struct {
 	Slot       uint64
-	Block_root *byte256
-	State_root *byte256
+	Block_root *[32]byte
+	State_root *[32]byte
 	Epoch      uint64
 	Time       StartEndTime
 }
@@ -104,7 +102,7 @@ func get(url string) (*http.Response, error) {
 
 }
 
-// @param data: []byte - data to deserialize
+// @param data: [32]byte - data to deserialize
 // @return *uint64, error
 // Deserializes the given data to uint64
 func deserialize_slot(data []byte) (*uint64, error) {
@@ -128,7 +126,7 @@ func deserialize_slot(data []byte) (*uint64, error) {
 
 // create a new CheckpointFallback object
 // @return CheckpointFallback
-func (ch CheckpointFallback) new() CheckpointFallback {
+func (ch CheckpointFallback) New() CheckpointFallback {
 	return CheckpointFallback{
 		Services: make(map[config.Network][]CheckpointFallbackService),
 		Networks: []config.Network{
@@ -145,7 +143,7 @@ func (ch CheckpointFallback) new() CheckpointFallback {
 // / Build the checkpoint fallback service from the community-maintained list by [ethPandaOps](https://github.com/ethpandaops).
 // /
 // / The list is defined in [ethPandaOps/checkpoint-fallback-service](https://github.com/ethpandaops/checkpoint-sync-health-checks/blob/master/_data/endpoints.yaml).
-func (ch CheckpointFallback) build() (CheckpointFallback, error) {
+func (ch CheckpointFallback) Build() (CheckpointFallback, error) {
 	resp, err := http.Get(CHECKPOINT_SYNC_SERVICES_LIST)
 	if err != nil {
 		return ch, fmt.Errorf("failed to fetch services list: %w", err)
@@ -202,11 +200,11 @@ func (ch CheckpointFallback) build() (CheckpointFallback, error) {
 }
 
 // fetch the latest checkpoint from the given network
-func (ch CheckpointFallback) fetch_latest_checkpoint(network config.Network) byte256 {
-	services := ch.get_healthy_fallback_services(network)
-	checkpoint, error := ch.fetch_latest_checkpoint_from_services(services)
+func (ch CheckpointFallback) Fetch_latest_checkpoint(network config.Network) [32]byte {
+	services := ch.Get_healthy_fallback_services(network)
+	checkpoint, error := ch.Fetch_latest_checkpoint_from_services(services)
 	if error != nil {
-		return byte256{}
+		return [32]byte{}
 	}
 	return checkpoint
 
@@ -214,7 +212,7 @@ func (ch CheckpointFallback) fetch_latest_checkpoint(network config.Network) byt
 
 // fetch the latest checkpoint from the given endpoint
 func (ch CheckpointFallback) query_service(endpoint string) (*RawSlotResponse, error) {
-	constructed_url := ch.construct_url(endpoint)
+	constructed_url := ch.Construct_url(endpoint)
 	resp, err := http.Get(constructed_url)
 	if err != nil {
 		return nil, err
@@ -230,7 +228,7 @@ func (ch CheckpointFallback) query_service(endpoint string) (*RawSlotResponse, e
 }
 
 // fetch the latest checkpoint from the given services
-func (ch CheckpointFallback) fetch_latest_checkpoint_from_services(services []CheckpointFallbackService) (byte256, error) {
+func (ch CheckpointFallback) Fetch_latest_checkpoint_from_services(services []CheckpointFallbackService) ([32]byte, error) {
 	var (
 		slots      []Slot
 		wg         sync.WaitGroup
@@ -273,7 +271,7 @@ func (ch CheckpointFallback) fetch_latest_checkpoint_from_services(services []Ch
 	}
 
 	if allErrors != nil {
-		return byte256{}, allErrors
+		return [32]byte{}, allErrors
 	}
 
 	for slot := range slotChan {
@@ -281,7 +279,7 @@ func (ch CheckpointFallback) fetch_latest_checkpoint_from_services(services []Ch
 	}
 
 	if len(slots) == 0 {
-		return byte256{}, fmt.Errorf("failed to find max epoch from checkpoint slots")
+		return [32]byte{}, fmt.Errorf("failed to find max epoch from checkpoint slots")
 	}
 
 	maxEpochSlot := slots[0]
@@ -299,14 +297,14 @@ func (ch CheckpointFallback) fetch_latest_checkpoint_from_services(services []Ch
 		}
 	}
 
-	checkpoints := make(map[byte256]int)
+	checkpoints := make(map[[32]byte]int)
 	for _, slot := range maxEpochSlots {
 		if slot.Block_root != nil {
 			checkpoints[*slot.Block_root]++
 		}
 	}
 
-	var mostCommon byte256
+	var mostCommon [32]byte
 	maxCount := 0
 	for blockRoot, count := range checkpoints {
 		if count > maxCount {
@@ -316,44 +314,44 @@ func (ch CheckpointFallback) fetch_latest_checkpoint_from_services(services []Ch
 	}
 
 	if maxCount == 0 {
-		return byte256{}, fmt.Errorf("no checkpoint found")
+		return [32]byte{}, fmt.Errorf("no checkpoint found")
 	}
 
 	return mostCommon, nil
 }
 
-func (ch CheckpointFallback) fetch_latest_checkpoint_from_api(url string) (byte256, error) {
-	constructed_url := ch.construct_url(url)
+func (ch CheckpointFallback) Fetch_latest_checkpoint_from_api(url string) ([32]byte, error) {
+	constructed_url := ch.Construct_url(url)
 	resp, err := http.Get(constructed_url)
 
 	if err != nil {
-		return byte256{}, fmt.Errorf("failed to fetch checkpoint from API: %w", err)
+		return [32]byte{}, fmt.Errorf("failed to fetch checkpoint from API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var raw RawSlotResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return byte256{}, fmt.Errorf("failed to decode response: %w", err)
+		return [32]byte{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if len(raw.Data.Slots) == 0 {
-		return byte256{}, fmt.Errorf("no slots found in response")
+		return [32]byte{}, fmt.Errorf("no slots found in response")
 	}
 
 	slot := raw.Data.Slots[0]
 	if slot.Block_root == nil {
-		return byte256{}, fmt.Errorf("no block root found in response")
+		return [32]byte{}, fmt.Errorf("no block root found in response")
 	}
 
 	return *slot.Block_root, nil
 
 }
 
-func (ch CheckpointFallback) construct_url(endpoint string) string {
+func (ch CheckpointFallback) Construct_url(endpoint string) string {
 	return fmt.Sprintf("%s/checkpointz/v1/beacon/slots", endpoint)
 }
 
-func (ch CheckpointFallback) get_all_fallback_endpoints(network config.Network) []string {
+func (ch CheckpointFallback) Get_all_fallback_endpoints(network config.Network) []string {
 	var endpoints []string
 	for _, service := range ch.Services[network] {
 		endpoints = append(endpoints, service.Endpoint)
@@ -363,7 +361,7 @@ func (ch CheckpointFallback) get_all_fallback_endpoints(network config.Network) 
 
 }
 
-func (ch CheckpointFallback) get_healthy_fallback_endpoints(network config.Network) []string {
+func (ch CheckpointFallback) Get_healthy_fallback_endpoints(network config.Network) []string {
 	var healthyEndpoints []string
 	for _, service := range ch.Services[network] {
 		if service.Health_from_fallback.Result {
@@ -373,7 +371,7 @@ func (ch CheckpointFallback) get_healthy_fallback_endpoints(network config.Netwo
 	return healthyEndpoints
 
 }
-func (ch CheckpointFallback) get_healthy_fallback_services(network config.Network) []CheckpointFallbackService {
+func (ch CheckpointFallback) Get_healthy_fallback_services(network config.Network) []CheckpointFallbackService {
 	var healthyServices []CheckpointFallbackService
 	for _, service := range ch.Services[network] {
 		if service.Health_from_fallback.Result {
@@ -383,6 +381,6 @@ func (ch CheckpointFallback) get_healthy_fallback_services(network config.Networ
 	return healthyServices
 
 }
-func (ch CheckpointFallback) get_fallback_services(network config.Network) []CheckpointFallbackService {
+func (ch CheckpointFallback) Get_fallback_services(network config.Network) []CheckpointFallbackService {
 	return ch.Services[network]
 }

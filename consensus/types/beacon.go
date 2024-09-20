@@ -90,8 +90,6 @@ func (exe *ExecutionPayload) Def() {
 	exe.ExcessBlobGas = 0                 // Only for Deneb
 } // default
 
-
-
 type Withdrawal struct {
 	Index          uint64
 	Amount         uint64
